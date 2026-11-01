@@ -23,6 +23,7 @@ import pandas as pd
 
 SHARED = Path("data/shared")
 PANEL_DIR = Path("data/yield_panel")
+ROTATIONS_DIR = Path("data/rotations")
 
 TABLES = {  # name -> (source path, description)
     "panel_national": (PANEL_DIR / "panel_national_enriched.csv",
@@ -41,6 +42,18 @@ TABLES = {  # name -> (source path, description)
     "planning_municipal": (PANEL_DIR / "planning" / "municipal.parquet", "Planning-model panel, municipalities 2003-2025"),
     "planning_district": (PANEL_DIR / "planning" / "district.parquet", "Planning-model panel, districts 1999-2025"),
     "planning_state": (PANEL_DIR / "planning" / "state.parquet", "Planning-model panel, states 1982-2025"),
+    # Tables used by the rotation tool (src/rotations); it reads them from data/shared/ when data/rotations/ is empty.
+    "rotations_siap_crop_years": (ROTATIONS_DIR / "siap_crop_years.parquet",
+                                  "SIAP district x crop x cycle x water regime, 2003-2025 (19 crops)"),
+    "rotations_municipality_districts": (ROTATIONS_DIR / "municipality_districts.parquet",
+                                         "Each municipality's SIAP district (DDR)"),
+    "rotations_climate_municipal": (ROTATIONS_DIR / "climate_municipal.parquet",
+                                    "Monthly climate normals 2001-2025 per municipality (NASA POWER, rain corrected with CHIRPS)"),
+    "rotations_climate_municipal_years": (ROTATIONS_DIR / "climate_municipal_years.parquet",
+                                          "Monthly rain and ET0 per municipality and year, 2001-2025"),
+    "rotations_climate_district": (ROTATIONS_DIR / "climate_district.parquet", "Monthly climate normals per district"),
+    "rotations_climate_district_years": (ROTATIONS_DIR / "climate_district_years.parquet",
+                                         "Monthly rain and ET0 per district and year, 2001-2025"),
 }
 
 
