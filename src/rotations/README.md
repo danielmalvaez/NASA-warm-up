@@ -67,7 +67,7 @@ Comparisons with the current rotation use the same historical years for both. In
 | Yields, losses, prices, areas for 19 crops, both cycles and water regimes, 2003-2025 | SIAP open data (district level, with state and national fallback) | `siap_stats.py` |
 | Climate per municipality (2,463) and district (191) | NASA POWER daily (MERRA-2 cells): rain, Tmin/Tmax, RH, radiation → monthly normals, frost probability (nights ≤2 °C), heat days (≥35 °C), and year-by-year rain and ET0 | `climate.py` |
 | Rain correction | CHIRPS (satellite + gauges) / POWER season and off-season ratios per municipality. Median ≈1.0, but 0.6-0.85 in the Valles Centrales of Oaxaca and Texcoco | `climate.rain_correction` |
-| Crop traits | `data/crops.csv`, with sources and evidence per column in `data/crop_sources.csv` | `catalog.py` |
+| Crop traits | `tables/crops.csv`, with sources and evidence per column in `tables/crop_sources.csv` | `catalog.py` |
 
 ## Known gaps (also shown to the farmer)
 
@@ -83,7 +83,7 @@ Comparisons with the current rotation use the same historical years for both. In
 
 | Task | Who | Effort |
 |---|---|---|
-| Check every value in `data/crops.csv` against FAO-56 Tables 11, 12, 22 and IPCC 2006 Table 11.2; add INIFAP values for Mexican varieties | non-coder | 1-2 days |
+| Check every value in `tables/crops.csv` against FAO-56 Tables 11, 12, 22 and IPCC 2006 Table 11.2; add INIFAP values for Mexican varieties | non-coder | 1-2 days |
 | Review the Spanish card text with an agronomist or extension agent | non-coder | 1 day |
 | Production costs per crop and state (FIRA *agrocostos* or INIFAP technology packages) → net income | non-coder + small code change | 2 days |
 | DSSAT (DSSATTools) or WOFOST runs for N and C carryover and the previous-crop effect, for the demo districts | coder | 3-5 days |

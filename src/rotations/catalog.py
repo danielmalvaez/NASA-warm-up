@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-DATA = Path(__file__).parent / "data"
+DATA = Path(__file__).parent / "tables"   # not "data/": the repo ignores data/ folders
 
 # Milpa: maize + bean + squash on the same field. Partial land-equivalent ratios (share of each crop's
 # monoculture yield). Sum 1.25, close to the 1.22 mean LER of annual intercrops in Yu et al. 2015
