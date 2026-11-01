@@ -79,7 +79,7 @@ def read(name, out=OUT):
     for path in (Path(out) / f"{name}.parquet", SHARED / f"rotations_{name}.parquet"):
         if path.exists():
             return pd.read_parquet(path)
-    raise FileNotFoundError(f"{name}: run `python -m src.rotations.build` or unzip the shared data package")
+    raise FileNotFoundError(f"{name}: run `python -m src.rotations.build` or pull data/shared/ from the repo")
 
 
 def load(out=OUT):

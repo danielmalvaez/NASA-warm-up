@@ -7,7 +7,7 @@ Walkthroughs:
 - [`Notebooks/yield_panel_sources.ipynb`](../../Notebooks/yield_panel_sources.ipynb): adds IMERG, CHIRPS, MODIS NDVI, SMAP and IGBP, the ablation, and the SIAP district check.
 - [`Notebooks/yield_planning.ipynb`](../../Notebooks/yield_planning.ipynb): all of Mexico, SIAP back to 1980, the pre-season planning model and a 2026 outlook.
 
-**Start from the shared data package** (`python -m src.yield_panel.share export` makes it; ~50 MB of Parquet) to skip every download. See [Shared data](#shared-data).
+**Start from the shared data in `data/shared/`** (tracked in the repo, ~70 MB of Parquet; `python -m src.yield_panel.share export` refreshes it) to skip every download. See [Shared data](#shared-data).
 
 ## Data
 
@@ -120,7 +120,7 @@ Findings (states tested on 31 years, districts 16, municipalities 12):
 
 ```bash
 python -m src.yield_panel.share export    # data/shared/*.parquet + manifest.json (row counts, columns, sha256)
-python -m src.yield_panel.share check     # verify checksums after unzipping
+python -m src.yield_panel.share check     # verify checksums
 ```
 
 ```python

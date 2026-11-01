@@ -26,7 +26,7 @@ Build the tables once (~3 min with the SIAP and POWER caches; otherwise it downl
 python -m src.rotations.build
 ```
 
-Or skip the build: unzip the shared data package into `data/shared/` (`python -m src.yield_panel.share export` includes the `rotations_*` tables). The tool reads `data/shared/` when `data/rotations/` is empty.
+Or skip the build: the repo already includes the tables in `data/shared/` (the `rotations_*` files, refreshed with `python -m src.yield_panel.share export`). The tool reads `data/shared/` when `data/rotations/` is empty.
 
 ## How it decides what to propose
 

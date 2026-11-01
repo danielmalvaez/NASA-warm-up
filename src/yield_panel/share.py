@@ -3,7 +3,7 @@
     python -m src.yield_panel.share export          # writes data/shared/*.parquet + manifest.json
     python -m src.yield_panel.share check           # verifies checksums of data/shared/
 
-Then zip data/shared/ and put it in the team drive. To use it, unzip it to data/shared/ and:
+data/shared/ is tracked in the repo (~70 MB), so a fresh clone already has it. To use it:
 
     from src.yield_panel import share
     panel = share.load("panel_national")            # same columns as the CSVs the pipeline writes
@@ -96,7 +96,7 @@ def check(dest=SHARED):
 def load(name, dest=SHARED):
     path = Path(dest) / f"{name}.parquet"
     if not path.exists():
-        raise FileNotFoundError(f"{path} not found: unzip the shared data package into {dest}/")
+        raise FileNotFoundError(f"{path} not found: pull the branch (data/shared/ is in the repo) or run `python -m src.yield_panel.share export`")
     return pd.read_parquet(path)
 
 
