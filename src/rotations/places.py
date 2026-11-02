@@ -4,7 +4,7 @@ from functools import lru_cache
 
 import pandas as pd
 
-from . import catalog, climate, siap_stats
+from . import catalog, climate, observed, siap_stats
 from .indicators import Place
 
 
@@ -20,6 +20,14 @@ def _districts():
     d["ddr_plain"] = d["ddr_name"].map(catalog.plain)
     d["state_plain"] = d["state"].map(catalog.plain)
     return d
+
+
+@lru_cache(maxsize=1)
+def _observed():
+    try:
+        return observed.load("district"), observed.load("municipal")
+    except FileNotFoundError:
+        return None, None
 
 
 @lru_cache(maxsize=1)
@@ -70,7 +78,14 @@ def place(name, state=None, water="temporal", sowing_month=None):
         notes.append("Clima: promedio del distrito ponderado por superficie sembrada")
     if "rain_corrected" in clim and not bool(clim["rain_corrected"].any()):
         notes.append("Lluvia de NASA POWER sin corregir con estaciones (CHIRPS no disponible para este lugar)")
-    return Place(state_id=int(row.state_id), ddr=int(row.ddr), state=row.state, ddr_name=row.ddr_name,
+    obs_district, obs_municipal = _observed()
+    obs = None
+    if obs_municipal is not None:
+        obs = obs_municipal[(obs_municipal.state_id == row.state_id) & (obs_municipal.mun_id == row.mun_id)] if municipal else None
+        if obs is None or obs.empty or obs["ndvi"].isna().all():
+            obs = obs_district[(obs_district.state_id == row.state_id) & (obs_district.ddr == row.ddr)]
+        obs = obs.sort_values("month").reset_index(drop=True) if not obs.empty else None
+    return Place(state_id=int(row.state_id), ddr=int(row.ddr), state=row.state, ddr_name=row.ddr_name, observed=obs,
                  water=water, climate=clim.sort_values("month").reset_index(drop=True), siap=_siap(),
                  climate_years=yearly, municipality=row.municipality if municipal else None,
                  sowing_month=sowing_month, notes=notes)

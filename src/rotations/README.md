@@ -14,6 +14,8 @@ out = comparar_rotaciones(
     residuo="pastoreo",                             # stover: dejar, pastoreo, sacar, quemar
     tiene_animales=True, mes_siembra=None, pendiente="ligera",   # plana / ligera / fuerte
     propuestas=["maíz - frijol"],                   # optional rotations the farmer wants compared too
+    costos={"maíz": 9000},                          # optional: the farmer's cost per ha per season (MXN)
+    rendimiento_propio={"maíz": 1.5},               # optional: the farmer's yield in a normal year (t/ha)
 )
 print(to_json(out))
 ```
@@ -23,7 +25,8 @@ Rotation text: years are separated by `-`, `,` or `→`. `/` separates the sprin
 Build the tables once (~3 min with the SIAP and POWER caches; otherwise it downloads them):
 
 ```bash
-python -m src.rotations.build
+python -m src.rotations.build          # SIAP history and NASA POWER climate
+python -m src.rotations.observed       # MODIS NDVI and SMAP by month (needs the yield-panel caches, ~10 min)
 ```
 
 Or skip the build: the repo already includes the tables in `data/shared/` (the `rotations_*` files, refreshed with `python -m src.yield_panel.share export`). The tool reads `data/shared/` when `data/rotations/` is empty.
@@ -58,7 +61,28 @@ Candidates are scored with the farmer's priorities: a chosen priority counts 3, 
 | `plagas` | % | share of crop changes that switch plant family (mixtures count half) | rule |
 | `forraje` | t DM/ha/yr | forage crops + residue taken for animals | medium |
 
+With costs (below), three more: `ganancia` (profit, MXN/ha/yr), `ganancia_p10` (profit in a bad year) and `prob_perdida` (share of years where costs exceed the harvest's value). Without them, two break-even costs instead: `costo_equilibrio` (the most a hectare can cost per year before losing money in an average year) and `costo_equilibrio_8de10` (before losing in 8 of 10 years).
+
 Comparisons with the current rotation use the same historical years for both. Income differences come with a 90% year-bootstrap interval. They are called "clear" only if the interval excludes zero **and** the yields are observed in the district (not for milpa, whose yields are assumed).
+
+## Costs and the farmer's own numbers
+
+Open cost data for Mexico are scarce. FIRA's Agrocostos system estimates costs by crop, state and cycle, but only some summaries are public. `tables/costs.csv` holds the ones we could source: irrigated autumn-winter maize, sorghum, wheat, chickpea and bean in **Sinaloa** (FIRA, 2024-26). No open source was found for rainfed crops, so:
+
+1. **The farmer's figure comes first** (`costos`). The output's `costos.pregunta_sugerida` is the question the assistant should ask.
+2. **Otherwise the sourced reference cost is used,** but only for the same crop, cycle, water regime and state. No cost is ever estimated or borrowed from another state.
+3. **With no cost, the tool says what is missing.** It gives the break-even costs, and for each alternative the most the unknown crop can cost to leave the farmer as much as the current rotation does.
+
+Profit replaces gross income in the scores only when the current rotation's costs are known and at least three alternatives have known costs. Alternatives without costs are then left out and listed under `costos.sin_costo_no_mostradas`.
+
+`rendimiento_propio` sets a crop's yield level for this farm (ratio to the district's median production per sown ha, between 0.2 and 5). SIAP still supplies the year-to-year pattern.
+
+## What NASA satellites add (`observed.py`)
+
+| Observation | Use in the tool |
+|---|---|
+| MODIS NDVI (MOD13C2, 0.05°, 2003-2025), cropland-weighted (MCD12C1) within 15 km | `tu_lugar` says when the area's farmland is typically least and most green, and whether that matches the calendar the tool assumed for the current rotation (if not, it asks for sowing and harvest dates) |
+| SMAP root-zone moisture (SPL4SMGP, 0-100 cm, 2015-2025) | Relative wetness at sowing (0 = the municipality's dry reference, 1 = its wet reference) sets how much stored water a crop sown on residual moisture gets in the water balance. If it is below 30%, the card warns that sowing on residual moisture is risky without supplementary irrigation |
 
 ## Data
 
@@ -68,10 +92,12 @@ Comparisons with the current rotation use the same historical years for both. In
 | Climate per municipality (2,463) and district (191) | NASA POWER daily (MERRA-2 cells): rain, Tmin/Tmax, RH, radiation → monthly normals, frost probability (nights ≤2 °C), heat days (≥35 °C), and year-by-year rain and ET0 | `climate.py` |
 | Rain correction | CHIRPS (satellite + gauges) / POWER season and off-season ratios per municipality. Median ≈1.0, but 0.6-0.85 in the Valles Centrales of Oaxaca and Texcoco | `climate.rain_correction` |
 | Crop traits | `tables/crops.csv`, with sources and evidence per column in `tables/crop_sources.csv` | `catalog.py` |
+| Reference costs | `tables/costs.csv`, FIRA (Sinaloa, irrigated autumn-winter) | `costs.py` |
+| Farmland greenness and soil moisture by month | NASA MODIS NDVI and SMAP | `observed.py` |
 
 ## Known gaps (also shown to the farmer)
 
-- **Gross income only.** No production costs yet.
+- **Costs only from the farmer or FIRA Sinaloa.** Elsewhere the tool gives break-even costs rather than profit.
 - **No previous-crop effect on yield** (e.g. maize after bean yielding more). This is the main thing a crop model (DSSAT/WOFOST) would add.
 - **Milpa yields are assumed:** maize 85%, bean 25% and squash 15% of their sole-crop yields (LER 1.25; Yu et al. 2015 report a mean of 1.22 for annual intercrops).
 - **N and C use international coefficients.** They are good for comparing options, not for predicting soil change.
@@ -85,9 +111,8 @@ Comparisons with the current rotation use the same historical years for both. In
 |---|---|---|
 | Check every value in `tables/crops.csv` against FAO-56 Tables 11, 12, 22 and IPCC 2006 Table 11.2; add INIFAP values for Mexican varieties | non-coder | 1-2 days |
 | Review the Spanish card text with an agronomist or extension agent | non-coder | 1 day |
-| Production costs per crop and state (FIRA *agrocostos* or INIFAP technology packages) → net income | non-coder + small code change | 2 days |
+| More rows for `tables/costs.csv`: FIRA Agrocostos summaries or INIFAP technology packages for rainfed crops in the demo states, each with its source and season | non-coder | 1-2 days |
 | DSSAT (DSSATTools) or WOFOST runs for N and C carryover and the previous-crop effect, for the demo districts | coder | 3-5 days |
-| MODIS NDVI per municipality to show the bare months actually observed vs. the calendar's | coder | 1 day |
 | MCP tool wrapper (the function already returns JSON) | coder | ½ day |
 
 Tests: `python -m pytest tests/test_rotations.py`.

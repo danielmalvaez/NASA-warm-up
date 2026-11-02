@@ -255,7 +255,8 @@ def card(place, template, rotation, evaluation, baseline, income_diff, residue, 
         checks.append("¿Qué plagas, enfermedades y malezas hay en tu zona para estos cultivos?")
     return {
         "por_que": REASONS.get(template, REASONS["propuesta"]).format(**fill) + (f" {extra}" if extra else ""),
-        "evidencia": siap_evidence_lines(place, evaluation) + cost_evidence_lines(evaluation),
+        "evidencia": siap_evidence_lines(place, evaluation) + cost_evidence_lines(evaluation)
+                     + moisture_lines(place, evaluation),
         "beneficios": good,
         "riesgos": risks,
         "vacios": gaps,
@@ -330,6 +331,55 @@ def cost_summary(place, evaluations, net):
     }
 
 
+def satellite_lines(place, modeled_bare):
+    """What MODIS sees in the area's cropland, compared with the calendar the tool assumes."""
+    from .observed import low_green_months
+
+    if place.observed is None:
+        return []
+    low, high = low_green_months(place.observed)
+    if not low:
+        return []
+    out = [f"Lo que ve el satélite (MODIS, NASA, 2003-2025): las tierras de cultivo de tu zona están menos verdes en "
+           f"{months_text(low)} y más verdes en {months_text(high)}."]
+    if modeled_bare:
+        overlap = len(set(low) & set(modeled_bare)) / len(set(low))
+        green_when_bare = sorted(set(high) & set(modeled_bare))
+        if len(green_when_bare) >= 0.6 * len(high):
+            out.append(f"Ojo: el satélite ve la zona más verde en {months_text(green_when_bare)}, cuando con tu rotación "
+                       "la parcela estaría sin cultivo. Puede ser vegetación que crece con las lluvias (malezas, monte) "
+                       "o cultivos de verano de tus vecinos; ese verdor no cuenta como cultivo en la comparación.")
+        elif overlap >= 0.6:
+            out.append("Coincide con el calendario que supuse para tu rotación.")
+        else:
+            out.append("No coincide del todo con el calendario que supuse: puede haber riego, otro calendario de "
+                       "siembra, malezas o árboles en esos terrenos. Dime cuándo siembras y cosechas para ajustarlo.")
+    return out
+
+
+def moisture_lines(place, evaluation):
+    """SMAP relative wetness at sowing for crops sown on residual moisture."""
+    from .indicators import MONTH_NAMES, MONTH_OF_DAY
+    from .observed import relative_moisture
+
+    lines = []
+    for item in evaluation["seasons"]:
+        s = item["season"]
+        if s.cycle != "oi" or place.water != "temporal":
+            continue
+        month = int(MONTH_OF_DAY[s.sow_day])
+        wet = relative_moisture(place.observed, month + 1)
+        if wet is None:
+            lines.append({"texto": f"Sin datos de SMAP para {catalog.name(s.crop)}: se supuso el suelo lleno de agua "
+                                   "al sembrar.", "fuente": "supuesto", "evidencia": "baja"})
+            continue
+        lines.append({"texto": (f"Humedad del suelo al sembrar {catalog.name(s.crop)} ({MONTH_NAMES[month]}): SMAP "
+                                f"(NASA) la ubica en {wet:.0%} entre lo más seco y lo más húmedo de 2015-2025 (0-100 cm); "
+                                "con eso se calcula el agua guardada que puede usar."),
+                      "fuente": "NASA SMAP", "evidencia": "media"})
+    return lines
+
+
 GENERAL_GAPS = [
     "Costos: solo usamos tu dato o costos publicados por FIRA para tu estado; si no hay, se muestra el valor de la cosecha y el costo máximo para no perder.",
     "SIAP reporta por distrito, no por parcela: tu parcela puede rendir más o menos que el promedio.",
@@ -371,6 +421,7 @@ def place_summary(place, current_eval):
                          "heladas, agua y calendario.")
     bare = current_eval["bare_months"]
     lines.append(f"Con tu rotación actual la parcela queda descubierta en: {months_text(bare)}.")
+    lines.extend(satellite_lines(place, bare))
     erosive = [m for m in bare if rain[m - 1] >= 60]
     if erosive:
         lines.append(f"Ojo: en {months_text(erosive)} llueve fuerte y el suelo puede estar descubierto.")

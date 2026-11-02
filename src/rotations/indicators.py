@@ -60,6 +60,7 @@ class Place:
     notes: list = field(default_factory=list)
     costs: dict = field(default_factory=dict)       # crop key -> farmer's cost, MXN/ha per season
     own_yield: dict = field(default_factory=dict)   # crop key -> farmer's normal-year yield, t/ha
+    observed: pd.DataFrame | None = None            # 12 rows: MODIS NDVI and SMAP root-zone moisture by month
 
     @property
     def lgp(self):
@@ -237,10 +238,18 @@ def water_deficit(place, seasons, rain=None, et0=None):
         deficit = np.maximum(etc - peff * s.present_month, 0).sum()
         if s.cycle == "oi" and place.water == "temporal":
             depth = max(catalog.crops().loc[c, "raiz_m"] for c in catalog.components(s.crop))
-            deficit = max(deficit - depth * place.soil_water_mm_m, 0.0)
+            deficit = max(deficit - depth * place.soil_water_mm_m * stored_fraction(place, s), 0.0)
         total += deficit
         demand += etc.sum()
     return total, demand
+
+
+def stored_fraction(place, s):
+    """Share of the root zone's available water present at sowing: SMAP relative wetness, else full."""
+    from .observed import relative_moisture
+
+    value = relative_moisture(place.observed, int(MONTH_OF_DAY[s.sow_day]) + 1)
+    return 1.0 if value is None else value
 
 
 def water_by_year(place, seasons):
@@ -266,8 +275,10 @@ def production(place, crop, cycle):
         h = history(place, part, cycle)
         if h is None:
             return None
-        factor = own_yield_factor(place, part, h["per_sown"]) if crop not in catalog.COMPOSITES else None
-        if factor is not None:     # the farmer's own yield sets the level; SIAP keeps the year-to-year pattern
+        # The farmer's sole-crop yield sets the level (also for that crop inside milpa, whose shares are
+        # relative to sole crops); SIAP keeps the year-to-year pattern.
+        factor = own_yield_factor(place, part, h["per_sown"])
+        if factor is not None:
             h = {**h, "per_sown": h["per_sown"] * factor, "expected": h["expected"] * factor}
         out[part] = {"share": share, "own_yield_factor": factor, **h}
     return out
@@ -409,6 +420,14 @@ def evaluate(place, rotation, residue="dejar"):
                     f"{catalog.name(part).capitalize()}: en tu distrito se siembran ~{p['sown_ha']:,.0f} ha al año "
                     f"(contra ~{biggest[1]:,.0f} ha de {catalog.name(biggest[0])}). Es un cultivo de nicho: quizá solo "
                     "se da en algunas partes del distrito, su rendimiento viene de esas parcelas y el mercado es chico")
+        if s.cycle == "oi" and place.water == "temporal" and place.observed is not None:
+            from .observed import relative_moisture
+            wet = relative_moisture(place.observed, int(MONTH_OF_DAY[s.sow_day]) + 1)
+            if wet is not None and wet < 0.3:
+                warnings.append(f"{catalog.name(s.crop).capitalize()}: según SMAP (NASA), en "
+                                f"{MONTH_NAMES[MONTH_OF_DAY[s.sow_day]]} el suelo de tu zona suele estar casi seco "
+                                f"({wet:.0%} entre lo más seco y lo más húmedo de 2015-2025); sembrar con humedad "
+                                "residual es arriesgado sin riego de auxilio")
         if s.heat_days >= 3:
             warnings.append(f"{catalog.name(s.crop).capitalize()}: ~{s.heat_days:.0f} días ≥35 °C a mitad del ciclo en un año típico")
 

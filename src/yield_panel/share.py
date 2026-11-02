@@ -54,6 +54,10 @@ TABLES = {  # name -> (source path, description)
     "rotations_climate_district": (ROTATIONS_DIR / "climate_district.parquet", "Monthly climate normals per district"),
     "rotations_climate_district_years": (ROTATIONS_DIR / "climate_district_years.parquet",
                                          "Monthly rain and ET0 per district and year, 2001-2025"),
+    "rotations_observed_municipal": (ROTATIONS_DIR / "observed_municipal.parquet",
+                                     "MODIS NDVI (cropland) and SMAP root-zone moisture by month per municipality"),
+    "rotations_observed_district": (ROTATIONS_DIR / "observed_district.parquet",
+                                    "MODIS NDVI and SMAP root-zone moisture by month per district"),
 }
 
 

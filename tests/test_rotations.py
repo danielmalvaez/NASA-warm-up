@@ -176,3 +176,21 @@ def test_own_yield_sets_the_level_but_keeps_the_pattern():
     mine = indicators.production(place, "maize", "pv")["maize"]
     assert mine["own_yield_factor"] == pytest.approx(2.0)
     assert np.allclose(mine["per_sown"] / base["per_sown"], 2.0)
+
+
+def test_smap_wetness_sets_stored_water_for_residual_moisture_crops():
+    place = synthetic_place()
+    wet = indicators.evaluate(place, [{"pv": "maize", "oi": "chickpea"}])["values"]["agua"]
+    month = np.arange(1, 13)
+    place.observed = pd.DataFrame({"month": month, "ndvi": np.r_[np.full(5, 0.3), np.full(5, 0.6), [0.4, 0.3]],
+                                   "smap_relative": np.full(12, 0.1)})
+    dry = indicators.evaluate(place, [{"pv": "maize", "oi": "chickpea"}])
+    assert dry["values"]["agua"] > wet
+    assert any("SMAP" in w for w in dry["warnings"])
+
+
+def test_low_green_months_from_ndvi():
+    from src.rotations import observed
+    obs = pd.DataFrame({"month": np.arange(1, 13), "ndvi": [0.3, 0.3, 0.3, 0.3, 0.32, 0.4, 0.55, 0.6, 0.6, 0.5, 0.4, 0.33]})
+    low, high = observed.low_green_months(obs)
+    assert set(low) >= {1, 2, 3, 4} and set(high) >= {8, 9}

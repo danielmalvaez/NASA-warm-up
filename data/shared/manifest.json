@@ -1,5 +1,5 @@
 {
- "created_utc": "2026-11-01T02:40:16+00:00",
+ "created_utc": "2026-11-02T00:11:05+00:00",
  "tables": {
   "climate_indices": {
    "description": "Ocean indices per year known by April 30 (NOAA CPC/PSL)",
@@ -714,6 +714,41 @@
    ],
    "bytes": 1071527,
    "sha256": "a85e5c72d048ae819975801484771267c2a98b7c3882bebf5ef5090b03f62899"
+  },
+  "rotations_observed_municipal": {
+   "description": "MODIS NDVI (cropland) and SMAP root-zone moisture by month per municipality",
+   "rows": 29556,
+   "columns": [
+    "state_id",
+    "mun_id",
+    "month",
+    "ndvi",
+    "ndvi_p20",
+    "ndvi_p80",
+    "ndvi_cropland_weighted",
+    "smap_rootzone",
+    "smap_dry",
+    "smap_wet",
+    "smap_relative"
+   ],
+   "bytes": 1181303,
+   "sha256": "48d4b4be81ea03e619bef6673825b410677f24e5c5a8fc6a55051d9b1c81bfae"
+  },
+  "rotations_observed_district": {
+   "description": "MODIS NDVI and SMAP root-zone moisture by month per district",
+   "rows": 2292,
+   "columns": [
+    "state_id",
+    "ddr",
+    "month",
+    "ndvi",
+    "ndvi_p20",
+    "ndvi_p80",
+    "smap_rootzone",
+    "smap_relative"
+   ],
+   "bytes": 108867,
+   "sha256": "594ea86f4242bbc69017b0f6f12740651054633dd4bca1608193d9d475ad3bdf"
   }
  }
 }
