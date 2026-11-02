@@ -1,10 +1,11 @@
-"""Production costs per hectare: the farmer's own figure first, then a sourced reference table.
+"""Production costs per hectare: only the farmer's own figures enter the calculations.
 
-Open cost data for Mexico are scarce. FIRA's Agrocostos system estimates costs by crop, state and cycle, but
-only some summaries are public; the reference table (tables/costs.csv) holds the ones we could source, all
-irrigated autumn-winter crops in Sinaloa. Every other crop needs the farmer's figure, and without it the
-tool reports break-even costs (the most a hectare can cost before it loses money) instead of profit.
-No cost is ever estimated or borrowed from another state.
+Open cost data for Mexico are scarce: FIRA's Agrocostos system is not downloadable, and the few public
+summaries we found (tables/costs.csv) are irrigated autumn-winter crops in Sinaloa, for commercial farms
+that assume high yields (e.g. 12 t/ha maize). Applying them to a smallholder, or pairing them with SIAP's
+lower district yields, would mix two different farms. So the table is only a reference the assistant can
+quote when it asks the farmer for their cost ("FIRA estima ... ¿el tuyo es parecido?"); without the
+farmer's figure the tool reports break-even costs instead of profit.
 """
 
 from functools import lru_cache
@@ -21,18 +22,24 @@ def reference():
 
 
 def cost_for(place, crop, cycle):
-    """{'valor', 'fuente', 'evidencia', ...} for one season, or None when no cost is known."""
+    """The farmer's cost for one season ({'valor', 'fuente', 'evidencia'}), or None."""
     if crop in place.costs:
         return {"valor": float(place.costs[crop]), "fuente": "tu dato", "evidencia": "alta", "url": None,
                 "temporada": None}
+    return None
+
+
+def reference_for(place, crop, cycle):
+    """A published cost for the same crop, cycle, water regime and state, to quote when asking; or None."""
     t = reference()
     hit = t[(t["crop"] == crop) & (t["cycle"] == cycle) & (t["water"] == place.water)
             & (t["state"].map(catalog.plain) == catalog.plain(place.state))]
     if hit.empty:
         return None
     row = hit.iloc[0]
-    return {"valor": float(row.cost_mxn_ha), "fuente": row.source, "evidencia": row.evidencia, "url": row.url,
-            "temporada": row.season, "nota": row.nota}
+    return {"cultivo": catalog.name(crop), "mxn_ha": float(row.cost_mxn_ha), "temporada": row.season,
+            "rendimiento_supuesto_t_ha": float(row.yield_assumed_t_ha), "fuente": row.source, "url": row.url,
+            "nota": row.nota}
 
 
 def own_yield_factor(place, crop, per_sown):

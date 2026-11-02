@@ -31,9 +31,9 @@ EVIDENCE = {"nitrogeno": "baja", "carbono": "baja", "erosion": "media", "plagas"
 SOURCES = {
     "ingreso": "SIAP (rendimiento y precio medio rural del distrito)",
     "ingreso_p10": "SIAP, 2003-2025, a precios recientes",
-    "ganancia": "SIAP menos costos (tu dato o FIRA)",
-    "ganancia_p10": "SIAP 2003-2025 menos costos (tu dato o FIRA)",
-    "prob_perdida": "SIAP 2003-2025 menos costos (tu dato o FIRA)",
+    "ganancia": "SIAP menos tus costos",
+    "ganancia_p10": "SIAP 2003-2025 menos tus costos",
+    "prob_perdida": "SIAP 2003-2025 menos tus costos",
     "costo_equilibrio": "SIAP (valor de la cosecha por ha sembrada)",
     "costo_equilibrio_8de10": "SIAP 2003-2025",
     "riesgo": "SIAP, 2003-2025",
@@ -273,10 +273,8 @@ def cost_evidence_lines(evaluation):
         if not c or s.crop in seen:
             continue
         seen.add(s.crop)
-        where = "lo que nos dijiste" if c["fuente"] == "tu dato" else f"{c['fuente']}, {c['temporada']}"
-        lines.append({"texto": f"Costo de {catalog.name(s.crop)}: {money(c['valor'])} por ha ({where}).",
-                      "fuente": "tu dato" if c["fuente"] == "tu dato" else "FIRA", "evidencia": c["evidencia"],
-                      **({"url": c["url"]} if c.get("url") else {})})
+        lines.append({"texto": f"Costo de {catalog.name(s.crop)}: {money(c['valor'])} por ha (lo que nos dijiste).",
+                      "fuente": "tu dato", "evidencia": c["evidencia"]})
     for item in evaluation["seasons"]:
         p = item["prod"] or {}
         for part, q in p.items():
@@ -306,28 +304,38 @@ def cost_gap_lines(rotation, evaluation, baseline):
 
 
 def cost_summary(place, evaluations, net):
-    """Which costs were used, which are missing, and the question the assistant should ask."""
-    used, missing = {}, set()
+    """Which costs the farmer gave, which are missing, and the question the assistant should ask."""
+    from .costs import reference_for
+
+    used, missing = {}, {}
     for e in evaluations:
         for item in e["seasons"]:
             if item["prod"] is None:
                 continue
-            c = item.get("cost")
+            c, s = item.get("cost"), item["season"]
             if c:
-                used[item["season"].crop] = c
+                used[s.crop] = c
             else:
-                missing.add(item["season"].crop)
-    missing -= set(used)
+                missing.setdefault(s.crop, s.cycle)
+    missing = {k: v for k, v in missing.items() if k not in used}
+    references = [r for r in (reference_for(place, c, cycle) for c, cycle in missing.items()) if r]
+    question = None
+    if missing:
+        question = (f"¿Cuánto te cuesta sembrar una hectárea de {', '.join(catalog.name(c) for c in missing)} "
+                    "(semilla, fertilizante, maquinaria o yunta, jornales y cosecha)?")
+        if references:
+            question += " Como referencia, " + "; ".join(
+                f"FIRA estima unos {money(r['mxn_ha'])}/ha para {r['cultivo']} ({r['temporada']}, sin renta de la "
+                f"tierra, para rendimientos de {r['rendimiento_supuesto_t_ha']:g} t/ha)" for r in references) + \
+                ". ¿El tuyo es parecido?"
     return {
         "ganancia_calculada": net,
-        "usados": [{"cultivo": catalog.name(k), "mxn_ha": v["valor"], "fuente": v["fuente"], "temporada": v["temporada"]}
-                   for k, v in used.items()],
-        "faltantes": [catalog.name(c) for c in sorted(missing)],
-        "pregunta_sugerida": (None if not missing else
-                              f"¿Cuánto te cuesta sembrar una hectárea de {', '.join(catalog.name(c) for c in sorted(missing))} "
-                              "(semilla, fertilizante, maquinaria o yunta, jornales y cosecha)?"),
-        "nota": ("Con tus costos puedo calcular cuánto te queda y en cuántos años de cada 10 perderías dinero. "
-                 "Sin ellos te digo lo máximo que puede costarte una hectárea para no perder."),
+        "usados": [{"cultivo": catalog.name(k), "mxn_ha": v["valor"], "fuente": v["fuente"]} for k, v in used.items()],
+        "faltantes": [catalog.name(c) for c in missing],     # current rotation's crops first
+        "pregunta_sugerida": question,
+        "referencias_para_preguntar": references,
+        "nota": ("Solo uso los costos que tú me das. Con ellos calculo cuánto te queda y en cuántos años de cada 10 "
+                 "perderías dinero; sin ellos te digo lo máximo que puede costarte una hectárea para no perder."),
     }
 
 
@@ -381,7 +389,7 @@ def moisture_lines(place, evaluation):
 
 
 GENERAL_GAPS = [
-    "Costos: solo usamos tu dato o costos publicados por FIRA para tu estado; si no hay, se muestra el valor de la cosecha y el costo máximo para no perder.",
+    "Costos: solo usamos los que tú nos das; sin ellos se muestra el valor de la cosecha y el costo máximo para no perder.",
     "SIAP reporta por distrito, no por parcela: tu parcela puede rendir más o menos que el promedio.",
     "Precios: mediana de los últimos 5 años, sin ajustar por inflación ni proyectar a futuro.",
     "Todavía no se incluye el efecto de un cultivo sobre el rendimiento del siguiente (p. ej., maíz después de frijol).",

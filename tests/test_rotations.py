@@ -157,14 +157,16 @@ def test_costs_give_profit_and_loss_years():
     assert np.isnan(unknown["values"]["ganancia"]) and unknown["missing_costs"] == ["bean"]
 
 
-def test_reference_costs_only_for_matching_state_cycle_and_water():
+def test_only_farmer_costs_enter_calculations_references_are_quoted():
     from src.rotations import costs
     place = synthetic_place(water="riego")
-    assert costs.cost_for(place, "maize", "oi") is None            # state "Prueba" has no published cost
     place.state = "Sinaloa"
-    c = costs.cost_for(place, "maize", "oi")
-    assert c and c["valor"] > 0 and "FIRA" in c["fuente"]
-    assert costs.cost_for(place, "maize", "pv") is None            # no spring-summer cost published
+    assert costs.cost_for(place, "maize", "oi") is None            # published FIRA cost is not used silently
+    ref = costs.reference_for(place, "maize", "oi")
+    assert ref and ref["mxn_ha"] > 0 and "FIRA" in ref["fuente"]
+    assert costs.reference_for(place, "maize", "pv") is None        # same crop, cycle, regime and state only
+    place.state = "Prueba"
+    assert costs.reference_for(place, "maize", "oi") is None
     place.costs = {"maize": 30000.0}
     assert costs.cost_for(place, "maize", "oi")["fuente"] == "tu dato"
 
