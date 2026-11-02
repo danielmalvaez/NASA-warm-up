@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 
 from . import catalog
+from .costs import cost_for
 
 DAYS = np.array([31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31])
 MONTH_OF_DAY = np.repeat(np.arange(12), DAYS)          # 365 days -> month index 0..11
@@ -57,6 +58,8 @@ class Place:
     sowing_month: int | None = None  # farmer's main sowing month (1-12), overrides the rain-based default
     soil_water_mm_m: float = 120.0   # plant-available water per metre of soil (loam; ~70 sand, ~170 clay loam)
     notes: list = field(default_factory=list)
+    costs: dict = field(default_factory=dict)       # crop key -> farmer's cost, MXN/ha per season
+    own_yield: dict = field(default_factory=dict)   # crop key -> farmer's normal-year yield, t/ha
 
     @property
     def lgp(self):
@@ -256,12 +259,17 @@ def water_by_year(place, seasons):
 
 def production(place, crop, cycle):
     """Expected t per sown ha of each component, its history and price; milpa scales by partial LER."""
+    from .costs import own_yield_factor
+
     out = {}
     for part, share in catalog.components(crop).items():
         h = history(place, part, cycle)
         if h is None:
             return None
-        out[part] = {"share": share, **h}
+        factor = own_yield_factor(place, part, h["per_sown"]) if crop not in catalog.COMPOSITES else None
+        if factor is not None:     # the farmer's own yield sets the level; SIAP keeps the year-to-year pattern
+            h = {**h, "per_sown": h["per_sown"] * factor, "expected": h["expected"] * factor}
+        out[part] = {"share": share, "own_yield_factor": factor, **h}
     return out
 
 
@@ -387,7 +395,8 @@ def evaluate(place, rotation, residue="dejar"):
         n_total, c_total, forage_total = n_total + n, c_total + c, forage_total + f
         levels = {p["level"] for p in prod.values()}
         evidence_levels.append(min((p["evidence"] for p in prod.values()), key=EVIDENCE_RANK.get))
-        per_season.append({"season": s, "prod": prod, "levels": levels})
+        per_season.append({"season": s, "prod": prod, "levels": levels, "cost": cost_for(place, s.crop, s.cycle),
+                           "income_mean": float(income.mean())})
         if s.frost >= 0.2:
             warnings.append(f"{catalog.name(s.crop).capitalize()}: en {s.frost:.0%} de los años hubo al menos una noche "
                             f"≤2 °C mientras el cultivo estaría en campo (sembrando en {MONTH_NAMES[MONTH_OF_DAY[s.sow_day]]})")
@@ -421,8 +430,22 @@ def evaluate(place, rotation, residue="dejar"):
         "plagas": family_breaks(rotation),
         "forraje": forage_total / n_years,
     }
+    costs = [item.get("cost") for item in per_season if item["prod"] is not None]
+    known = [c["valor"] for c in costs if c]
+    cost_per_year = sum(known) / n_years if known else 0.0
+    net = None
+    if combined is not None and costs and all(costs):
+        net = combined - cost_per_year
+        result.update({"ganancia": float(net.mean()), "ganancia_p10": float(net.quantile(0.1)),
+                       "prob_perdida": float((net < 0).mean())})
+    else:
+        result.update({"ganancia": np.nan, "ganancia_p10": np.nan, "prob_perdida": np.nan})
+    if combined is not None:     # most a hectare can cost per year: on average, and to not lose in 8 of 10 years
+        result.update({"costo_equilibrio": float(combined.mean()), "costo_equilibrio_8de10": float(combined.quantile(0.2))})
     evidence = min(evidence_levels, key=EVIDENCE_RANK.get) if evidence_levels else "sin datos"
-    return {"values": result, "income_by_year": combined, "seasons": per_season, "years": years,
+    return {"values": result, "income_by_year": combined, "net_by_year": net, "cost_per_year": cost_per_year,
+            "missing_costs": sorted({item["season"].crop for item in per_season if item["prod"] is not None and not item["cost"]}),
+            "seasons": per_season, "years": years,
             "bare_months": bare_months(years), "gaps": gaps, "warnings": sorted(set(warnings)),
             "siap_evidence": evidence}
 

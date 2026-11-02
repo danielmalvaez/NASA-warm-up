@@ -10,6 +10,8 @@ import numpy as np
 SCALES = {
     "ingreso": (0, 40000),
     "ingreso_p10": (0, 30000),
+    "ganancia": (-10000, 30000),        # profit, MXN/ha/yr
+    "ganancia_p10": (-15000, 20000),
     "riesgo": (0.4, 0.0),
     "agua_temporal": (0.3, 1.0),        # share of crop water need met by rain in a dry year
     "agua_riego": (800, 0),             # irrigation need, mm per year
@@ -45,15 +47,20 @@ def scale(name, value):
     return float(np.clip(100 * (value - lo) / (hi - lo), 0, 100))
 
 
-def scores(values, water, slope="ligera"):
+def scores(values, water, slope="ligera", net=False):
+    """0-100 per indicator. With net=True income scores use profit (income minus costs)."""
     out = {}
+    if net:
+        values = {**values, "ingreso": values["ganancia"], "ingreso_p10": values["ganancia_p10"]}
     for name, value in values.items():
         if name == "agua":
             out[name] = (scale("agua_temporal", values["agua_cubierta"]) if water == "temporal"
                          else scale("agua_riego", value))
         elif name == "erosion":
             out[name] = scale("erosion", value * SLOPE.get(slope, 1.0))
-        elif name in SCALES:
+        elif name in ("ingreso", "ingreso_p10") and net:
+            out[name] = scale("ganancia" if name == "ingreso" else "ganancia_p10", value)
+        elif name in SCALES and name not in ("ganancia", "ganancia_p10"):
             out[name] = scale(name, value)
     return out
 

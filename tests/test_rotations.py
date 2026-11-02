@@ -144,3 +144,35 @@ def test_comparar_rotaciones_on_real_data():
         assert set(x["tarjeta"]) >= {"por_que", "evidencia", "beneficios", "riesgos", "vacios", "revisar_con_tecnico"}
         assert x["indicadores"]["ingreso"]["evidencia"] in {"alta", "media", "baja"}
     assert to_json(r)
+
+
+def test_costs_give_profit_and_loss_years():
+    place = synthetic_place()
+    place.costs = {"maize": 9000.0}
+    e = indicators.evaluate(place, [{"pv": "maize"}])
+    v = e["values"]
+    assert v["ganancia"] == pytest.approx(v["ingreso"] - 9000)
+    assert 0 <= v["prob_perdida"] <= 1 and v["costo_equilibrio"] == pytest.approx(v["ingreso"])
+    unknown = indicators.evaluate(place, [{"pv": "maize"}, {"pv": "bean"}])
+    assert np.isnan(unknown["values"]["ganancia"]) and unknown["missing_costs"] == ["bean"]
+
+
+def test_reference_costs_only_for_matching_state_cycle_and_water():
+    from src.rotations import costs
+    place = synthetic_place(water="riego")
+    assert costs.cost_for(place, "maize", "oi") is None            # state "Prueba" has no published cost
+    place.state = "Sinaloa"
+    c = costs.cost_for(place, "maize", "oi")
+    assert c and c["valor"] > 0 and "FIRA" in c["fuente"]
+    assert costs.cost_for(place, "maize", "pv") is None            # no spring-summer cost published
+    place.costs = {"maize": 30000.0}
+    assert costs.cost_for(place, "maize", "oi")["fuente"] == "tu dato"
+
+
+def test_own_yield_sets_the_level_but_keeps_the_pattern():
+    place = synthetic_place()
+    base = indicators.production(place, "maize", "pv")["maize"]
+    place.own_yield = {"maize": 2 * float(base["per_sown"][base["per_sown"].index > 2015].median())}
+    mine = indicators.production(place, "maize", "pv")["maize"]
+    assert mine["own_yield_factor"] == pytest.approx(2.0)
+    assert np.allclose(mine["per_sown"] / base["per_sown"], 2.0)

@@ -12,6 +12,11 @@ CYCLES = {"pv": "primavera-verano", "oi": "otoño-invierno"}
 UNITS = {
     "ingreso": "MXN por ha al año (valor de la cosecha, sin costos)",
     "ingreso_p10": "MXN por ha en un año malo (1 de cada 10)",
+    "ganancia": "MXN por ha al año que te quedan después de costos",
+    "ganancia_p10": "MXN por ha que te quedan en un año malo (1 de cada 10)",
+    "prob_perdida": "años de cada 10 en que los costos superan el valor de la cosecha",
+    "costo_equilibrio": "lo máximo que puede costarte una ha al año para no perder en un año promedio",
+    "costo_equilibrio_8de10": "lo máximo que puede costarte una ha al año para no perder en 8 de cada 10 años",
     "riesgo": "años malos de cada 10 (producción < mitad de lo normal)",
     "agua_temporal": "% del agua que pide el cultivo que cubre la lluvia en un año seco (1 de cada 5)",
     "agua_riego": "mm de riego neto por año en un año típico (sin pérdidas de conducción ni de aplicación)",
@@ -26,6 +31,11 @@ EVIDENCE = {"nitrogeno": "baja", "carbono": "baja", "erosion": "media", "plagas"
 SOURCES = {
     "ingreso": "SIAP (rendimiento y precio medio rural del distrito)",
     "ingreso_p10": "SIAP, 2003-2025, a precios recientes",
+    "ganancia": "SIAP menos costos (tu dato o FIRA)",
+    "ganancia_p10": "SIAP 2003-2025 menos costos (tu dato o FIRA)",
+    "prob_perdida": "SIAP 2003-2025 menos costos (tu dato o FIRA)",
+    "costo_equilibrio": "SIAP (valor de la cosecha por ha sembrada)",
+    "costo_equilibrio_8de10": "SIAP 2003-2025",
     "riesgo": "SIAP, 2003-2025",
     "agua": "FAO-56 (coeficientes de cultivo) con NASA POWER 2001-2025 (ET0 Penman-Monteith; lluvia corregida con CHIRPS)",
     "nitrogeno": "IPCC 2006; Herridge et al. 2008",
@@ -101,9 +111,11 @@ def crop_names(rotation):
     return seen
 
 
-def indicator_rows(evaluation, score, water):
+def indicator_rows(evaluation, score, water, net=False):
     v = evaluation["values"]
     siap_ev = evaluation["siap_evidence"]
+    cost_ev = min([item["cost"]["evidencia"] for item in evaluation["seasons"] if item.get("cost")] or ["sin datos"],
+                  key=lambda e: {"alta": 3, "media": 2, "baja": 1}.get(e, 0))
     rows = {
         "ingreso": (v["ingreso"], money(v["ingreso"]) if np.isfinite(v["ingreso"]) else "sin datos", siap_ev),
         "ingreso_p10": (v["ingreso_p10"], money(v["ingreso_p10"]) if np.isfinite(v["ingreso_p10"]) else "sin datos", siap_ev),
@@ -116,6 +128,17 @@ def indicator_rows(evaluation, score, water):
         "plagas": (v["plagas"], f"{v['plagas']:.0%}", "regla"),
         "forraje": (v["forraje"], f"{v['forraje']:.1f} t MS/ha", "media"),
     }
+    if np.isfinite(v.get("ganancia", np.nan)):
+        both = min([siap_ev, cost_ev], key=lambda e: {"alta": 3, "media": 2, "baja": 1}.get(e, 0))
+        rows["ganancia"] = (v["ganancia"], signed_money(v["ganancia"]), both)
+        rows["ganancia_p10"] = (v["ganancia_p10"], signed_money(v["ganancia_p10"]), both)
+        rows["prob_perdida"] = (v["prob_perdida"], f"{10 * v['prob_perdida']:.1f} de cada 10", both)
+    if np.isfinite(v.get("costo_equilibrio", np.nan)):
+        rows["costo_equilibrio"] = (v["costo_equilibrio"], money(v["costo_equilibrio"]), siap_ev)
+        rows["costo_equilibrio_8de10"] = (v["costo_equilibrio_8de10"], money(v["costo_equilibrio_8de10"]), siap_ev)
+    if net:      # the income scores were computed on profit: show them there
+        score = {**score, "ganancia": score.get("ingreso"), "ganancia_p10": score.get("ingreso_p10"),
+                 "ingreso": None, "ingreso_p10": None}
     out = {}
     for name, (value, text, ev) in rows.items():
         unit = UNITS[f"agua_{water}"] if name == "agua" else UNITS[name]
@@ -151,7 +174,8 @@ def signed_money(x):
 def _fmt_diff(name, d):
     return {"ingreso": lambda: signed_money(d), "ingreso_p10": lambda: signed_money(d), "riesgo": lambda: f"{10 * d:+.1f} años de cada 10",
             "agua_temporal": lambda: f"{100 * d:+.0f} puntos", "agua_riego": lambda: f"{d:+.0f} mm",
-            "nitrogeno": lambda: f"{d:+.0f} kg N/ha", "carbono": lambda: f"{d:+.2f} t C/ha",
+            "nitrogeno": lambda: f"{d:+.0f} kg N/ha", "ganancia_p10": lambda: signed_money(d),
+            "prob_perdida": lambda: f"{10 * d:+.1f} años de cada 10", "carbono": lambda: f"{d:+.2f} t C/ha",
             "erosion": lambda: f"{100 * d:+.0f} puntos", "plagas": lambda: f"{100 * d:+.0f} puntos",
             "forraje": lambda: f"{d:+.1f} t MS/ha"}[name]()
 
@@ -170,19 +194,24 @@ COMPARISONS = [
 ]
 
 
-def compare_lines(values, base, income_diff, water, assumed=False):
+def compare_lines(values, base, income_diff, water, assumed=False, net=False):
     good, bad = [], []
+    word = "ganancia" if net else "ingreso"
     if income_diff:
         d, (lo, hi) = income_diff["media"], income_diff["intervalo_90"]
         text = (f"{signed_money(d)} por ha al año en promedio frente a tu rotación actual "
                 f"(rango 90%: {signed_money(lo)} a {signed_money(hi)}; {income_diff['años']} años de SIAP)")
         if assumed:
-            (good if d > 0 else bad).append("Ingreso según el supuesto de rendimiento (no medido en tu distrito): " + text)
+            (good if d > 0 else bad).append(f"{word.capitalize()} según el supuesto de rendimiento (no medido en tu distrito): " + text)
         elif income_diff["clara"]:
-            (good if d > 0 else bad).append(("Más ingreso: " if d > 0 else "Menos ingreso: ") + text)
+            (good if d > 0 else bad).append((f"Más {word}: " if d > 0 else f"Menos {word}: ") + text)
         else:
-            bad.append("Diferencia de ingreso no clara: " + text) if d < 0 else good.append("Diferencia de ingreso no clara: " + text)
-    for name, better, worse, threshold, sign in COMPARISONS:
+            (bad if d < 0 else good).append(f"Diferencia de {word} no clara: " + text)
+    comparisons = COMPARISONS
+    if net:
+        comparisons = [("ganancia_p10", "Te queda más en un año malo", "Te queda menos en un año malo", 500, 1),
+                       ("prob_perdida", "Menos años con pérdida", "Más años con pérdida", 0.05, -1)] + COMPARISONS[1:]
+    for name, better, worse, threshold, sign in comparisons:
         key = name
         if name.startswith("agua_"):
             if name != f"agua_{water}":
@@ -198,7 +227,7 @@ def compare_lines(values, base, income_diff, water, assumed=False):
     return good, bad
 
 
-def card(place, template, rotation, evaluation, baseline, income_diff, residue, extra=None):
+def card(place, template, rotation, evaluation, baseline, income_diff, residue, extra=None, net=False):
     names = crop_names(rotation)
     base_names = crop_names(baseline["rotation"]) if baseline else names
     new = [c for c in names if c not in base_names] or names
@@ -209,9 +238,11 @@ def card(place, template, rotation, evaluation, baseline, income_diff, residue, 
              if place.water == "temporal" else "el riego"}
     assumed = any(c in catalog.COMPOSITES for c in names) or evaluation["siap_evidence"] != "alta"
     good, bad = ([], []) if template == "actual" else compare_lines(
-        evaluation["values"], baseline["evaluation"]["values"], income_diff, place.water, assumed)
-    risks = bad + [r.format(**fill) for r in TEMPLATE_RISKS.get(template, [])] + evaluation["warnings"]
+        evaluation["values"], baseline["evaluation"]["values"], income_diff, place.water, assumed, net)
+    risks = bad + [r.format(**fill) for r in TEMPLATE_RISKS.get(template, []) if not (net and "bruto" in r)]
+    risks += evaluation["warnings"]
     gaps = list(evaluation["gaps"])
+    gaps += cost_gap_lines(rotation, evaluation, baseline if template != "actual" else None)
     if any(c in catalog.COMPOSITES for c in names):
         shares = ", ".join(f"{catalog.name(k).split(' (')[0]} {int(100 * v)}%" for k, v in catalog.MILPA.items())
         gaps.append(f"Rendimiento de la milpa supuesto, como parte de lo que rinde cada cultivo sembrado solo: {shares} "
@@ -224,7 +255,7 @@ def card(place, template, rotation, evaluation, baseline, income_diff, residue, 
         checks.append("¿Qué plagas, enfermedades y malezas hay en tu zona para estos cultivos?")
     return {
         "por_que": REASONS.get(template, REASONS["propuesta"]).format(**fill) + (f" {extra}" if extra else ""),
-        "evidencia": siap_evidence_lines(place, evaluation),
+        "evidencia": siap_evidence_lines(place, evaluation) + cost_evidence_lines(evaluation),
         "beneficios": good,
         "riesgos": risks,
         "vacios": gaps,
@@ -234,8 +265,73 @@ def card(place, template, rotation, evaluation, baseline, income_diff, residue, 
     }
 
 
+def cost_evidence_lines(evaluation):
+    lines, seen = [], set()
+    for item in evaluation["seasons"]:
+        c, s = item.get("cost"), item["season"]
+        if not c or s.crop in seen:
+            continue
+        seen.add(s.crop)
+        where = "lo que nos dijiste" if c["fuente"] == "tu dato" else f"{c['fuente']}, {c['temporada']}"
+        lines.append({"texto": f"Costo de {catalog.name(s.crop)}: {money(c['valor'])} por ha ({where}).",
+                      "fuente": "tu dato" if c["fuente"] == "tu dato" else "FIRA", "evidencia": c["evidencia"],
+                      **({"url": c["url"]} if c.get("url") else {})})
+    for item in evaluation["seasons"]:
+        p = item["prod"] or {}
+        for part, q in p.items():
+            if q.get("own_yield_factor"):
+                lines.append({"texto": f"{catalog.name(part).capitalize()}: usamos tu rendimiento de año normal; SIAP "
+                              "solo aporta cómo varía de un año a otro.", "fuente": "tu dato", "evidencia": "alta"})
+    return lines
+
+
+def cost_gap_lines(rotation, evaluation, baseline):
+    """What is missing about costs, and the most an unknown crop can cost to match the current rotation."""
+    missing = evaluation["missing_costs"]
+    if not missing:
+        return []
+    names = ", ".join(catalog.name(c) for c in missing)
+    lines = [f"No tenemos el costo de {names} en tu zona: el ingreso es el valor de la cosecha, sin restar costos."]
+    v = evaluation["values"]
+    if baseline is not None:
+        base = baseline["evaluation"]["values"]
+        if np.isfinite(base.get("ganancia", np.nan)) and np.isfinite(v.get("ingreso", np.nan)):
+            years = len(rotation)
+            unknown = sum(1 for item in evaluation["seasons"] if item["prod"] is not None and not item.get("cost"))
+            room = (v["ingreso"] * years - evaluation["cost_per_year"] * years - base["ganancia"] * years) / unknown
+            lines.append(f"Para que esta rotación te deje lo mismo que la actual, {names} tendría que costarte menos de "
+                         f"{money(max(room, 0))} por ha" + (" (no alcanza ni con costo cero)." if room <= 0 else "."))
+    return lines
+
+
+def cost_summary(place, evaluations, net):
+    """Which costs were used, which are missing, and the question the assistant should ask."""
+    used, missing = {}, set()
+    for e in evaluations:
+        for item in e["seasons"]:
+            if item["prod"] is None:
+                continue
+            c = item.get("cost")
+            if c:
+                used[item["season"].crop] = c
+            else:
+                missing.add(item["season"].crop)
+    missing -= set(used)
+    return {
+        "ganancia_calculada": net,
+        "usados": [{"cultivo": catalog.name(k), "mxn_ha": v["valor"], "fuente": v["fuente"], "temporada": v["temporada"]}
+                   for k, v in used.items()],
+        "faltantes": [catalog.name(c) for c in sorted(missing)],
+        "pregunta_sugerida": (None if not missing else
+                              f"¿Cuánto te cuesta sembrar una hectárea de {', '.join(catalog.name(c) for c in sorted(missing))} "
+                              "(semilla, fertilizante, maquinaria o yunta, jornales y cosecha)?"),
+        "nota": ("Con tus costos puedo calcular cuánto te queda y en cuántos años de cada 10 perderías dinero. "
+                 "Sin ellos te digo lo máximo que puede costarte una hectárea para no perder."),
+    }
+
+
 GENERAL_GAPS = [
-    "El ingreso es el valor de la cosecha: no incluye costos de semilla, fertilizante, maquinaria ni mano de obra.",
+    "Costos: solo usamos tu dato o costos publicados por FIRA para tu estado; si no hay, se muestra el valor de la cosecha y el costo máximo para no perder.",
     "SIAP reporta por distrito, no por parcela: tu parcela puede rendir más o menos que el promedio.",
     "Precios: mediana de los últimos 5 años, sin ajustar por inflación ni proyectar a futuro.",
     "Todavía no se incluye el efecto de un cultivo sobre el rendimiento del siguiente (p. ej., maíz después de frijol).",
